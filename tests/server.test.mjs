@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { request } from 'node:http';
+import { request, Server } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, unlink, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer, demoContent, getModels } from '../server.mjs';
+import appServer, { createServer, demoContent, getModels } from '../server.mjs';
 
 const models = getModels({});
 const valid = { prompt: 'Write a debounce function in JavaScript.', modelIds: models.slice(0, 2).map(model => model.id) };
@@ -38,6 +38,28 @@ function requestWithHost(base, path, host, { method = 'GET', body, headers = {} 
     req.end(payload);
   });
 }
+
+test('default export is an HTTP server that handles requests without calling listen', async () => {
+  assert.ok(appServer instanceof Server);
+  assert.equal(appServer.listening, false);
+  for (const path of ['/api/health', '/api/config']) {
+    const result = await new Promise(resolveResponse => {
+      const headers = {};
+      const response = {
+        destroyed: false, writableEnded: false, statusCode: 200,
+        setHeader(name, value) { headers[name.toLowerCase()] = value; },
+        writeHead(status, values) { this.statusCode = status; for (const [name, value] of Object.entries(values)) this.setHeader(name, value); },
+        end(body) { this.writableEnded = true; resolveResponse({ status: this.statusCode, headers, body: JSON.parse(body) }); },
+      };
+      appServer.emit('request', { method: 'GET', url: path, headers: { host: 'localhost' } }, response);
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.headers['content-type'], 'application/json; charset=utf-8');
+    if (path === '/api/health') assert.deepEqual(result.body, { status: 'ok' });
+    else assert.equal(result.body.models.length, 7);
+  }
+  assert.equal(appServer.listening, false);
+});
 
 test('config exposes model metadata and mode, never the provider token', async t => {
   const { base } = await start(t, { env: { HF_TOKEN: 'secret-test-token', HF_MODEL_1: 'owner/custom-model', HF_MODEL_1_NAME: 'My model' } });
@@ -126,13 +148,15 @@ test('Vercel startup calls listen on module import and binds all interfaces', ()
   const source = `
     import http from 'node:http';
     let captured;
-    http.Server.prototype.listen = function (port, host) { captured = { port, host }; return this; };
-    await import(${JSON.stringify(moduleUrl)});
-    console.log(JSON.stringify(captured));
+    let capturedServer;
+    let calls = 0;
+    http.Server.prototype.listen = function (port, host) { captured = { port, host }; capturedServer = this; calls++; return this; };
+    const entry = await import(${JSON.stringify(moduleUrl)});
+    console.log(JSON.stringify({ ...captured, sameExport: entry.default === capturedServer, calls }));
   `;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', windowsHide: true,
     env: { ...process.env, VERCEL: '1', PORT: '3456', HOST: '127.0.0.1', APP_ORIGIN: '', VERCEL_PROJECT_PRODUCTION_URL: '', VERCEL_URL: '', VERCEL_BRANCH_URL: '' } });
-  assert.deepEqual(JSON.parse(output), { port: 3456, host: '0.0.0.0' });
+  assert.deepEqual(JSON.parse(output), { port: 3456, host: '0.0.0.0', sameExport: true, calls: 1 });
 });
 
 test('Vercel trusted deployment domains support their own origins without trusting arbitrary hosts', async t => {

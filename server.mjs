@@ -403,14 +403,18 @@ export function createServer(options = {}) {
   return server;
 }
 
+// Vercel's Node runtime accepts a default HTTP server export. Reuse this same
+// instance for listen-based startup rather than creating a second server.
+const appServer = createServer();
+export default appServer;
+
 if (process.env.VERCEL === '1' || (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)) {
   const host = process.env.VERCEL === '1' ? '0.0.0.0' : process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid port number.');
-  const server = createServer();
-  server.listen(port, host, () => {
+  appServer.listen(port, host, () => {
     console.log(`Model Lab is running at http://${host}:${port}`);
     console.log(getProviders(process.env).some(provider => provider.configured) ? 'Live mode: requests use each model’s connected provider.' : 'Demo mode: locally scripted responses; no API key needed.');
   });
-  server.on('error', error => { console.error(`Could not start Model Lab: ${error.code || 'server error'}`); process.exitCode = 1; });
+  appServer.on('error', error => { console.error(`Could not start Model Lab: ${error.code || 'server error'}`); process.exitCode = 1; });
 }

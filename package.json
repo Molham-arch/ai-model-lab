@@ -5,7 +5,7 @@
   "description": "A personal AI model comparison workspace with a no-key demo and server-side inference.",
   "author": "Molham Alam",
   "repository": { "type": "git", "url": "https://github.com/Molham-arch/ai-model-lab.git" },
-  "homepage": "https://www.molham.tech/",
+  "homepage": "https://ai-model-lab-ruby.vercel.app/",
   "type": "module",
   "engines": { "node": ">=22.9.0" },
   "scripts": {

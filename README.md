@@ -4,6 +4,8 @@ A small AI model comparison app built to learn, demonstrate in a portfolio, and 
 
 Built by [Molham Alam](https://www.molham.tech/) with vanilla JavaScript and Node.js. The public version is an explicitly labelled scripted demo; running the project locally enables real inference with your own provider keys.
 
+[Live demo](https://ai-model-lab-ruby.vercel.app/) · [Portfolio](https://www.molham.tech/) · [Source code](https://github.com/Molham-arch/ai-model-lab)
+
 ![Model Lab public demo](docs/model-lab.jpg)
 
 ## What you can explore
