@@ -158,9 +158,25 @@ export function demoContent(prompt, variant = 0) {
   ][variant % 3]}\n\nThis demo shows the comparison workflow. Connect a model provider for answers to your exact prompt.`;
 }
 
-function readJson(req) {
+function readJson(req, allowParsedBody = false) {
   if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Use Content-Type: application/json.');
   if (Number(req.headers['content-length']) > MAX_BODY_BYTES) throw new HttpError(413, 'The request is too large.');
+  // Vercel's Node helpers can consume the stream and attach the parsed JSON.
+  // Only trust this server-side property inside that runtime, never on local requests.
+  if (allowParsedBody) {
+    let body;
+    let encoded;
+    try {
+      body = req.body;
+      if (body !== undefined) encoded = JSON.stringify(body);
+    } catch { throw new HttpError(400, 'The request contains invalid JSON.'); }
+    if (body !== undefined) {
+      if (encoded === undefined) throw new HttpError(400, 'The request contains invalid JSON.');
+      if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw new HttpError(413, 'The request is too large.');
+      return body;
+    }
+  }
+  if (req.readableEnded) throw new HttpError(400, 'The request contains invalid JSON.');
   return new Promise((resolveBody, reject) => {
     let bytes = 0;
     const chunks = [];
@@ -362,7 +378,7 @@ export function createServer(options = {}) {
         const expectedOrigin = trustedOrigins.find(origin => new URL(origin).host === hostUrl.host) ?? hostUrl.origin;
         const origin = req.headers.origin;
         if ((origin && origin !== expectedOrigin) || (req.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(req.headers['sec-fetch-site']))) throw new HttpError(403, 'Comparisons must be requested from this app.');
-        const input = validateComparison(await readJson(req), models);
+        const input = validateComparison(await readJson(req, env.VERCEL === '1'), models);
         const now = Date.now();
         for (const [key, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(key);
         const ip = req.socket.remoteAddress || 'unknown'; // Do not trust client-supplied forwarding headers.
@@ -403,13 +419,14 @@ export function createServer(options = {}) {
   return server;
 }
 
-// Vercel's Node runtime accepts a default HTTP server export. Reuse this same
-// instance for listen-based startup rather than creating a second server.
+// Serverless runtimes invoke the async Node request handler directly. The local
+// CLI uses the same handler through this server, without opening a Vercel port.
 const appServer = createServer();
-export default appServer;
+const requestHandler = appServer.listeners('request')[0];
+export default requestHandler;
 
-if (process.env.VERCEL === '1' || (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)) {
-  const host = process.env.VERCEL === '1' ? '0.0.0.0' : process.env.HOST || '127.0.0.1';
+if (process.env.VERCEL !== '1' && process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const host = process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid port number.');
   appServer.listen(port, host, () => {

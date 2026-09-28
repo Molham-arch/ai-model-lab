@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
-import { request, Server } from 'node:http';
+import { EventEmitter, once } from 'node:events';
+import { request } from 'node:http';
+import { Readable } from 'node:stream';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, unlink, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import appServer, { createServer, demoContent, getModels } from '../server.mjs';
+import requestHandler, { createServer, demoContent, getModels } from '../server.mjs';
 
 const models = getModels({});
 const valid = { prompt: 'Write a debounce function in JavaScript.', modelIds: models.slice(0, 2).map(model => model.id) };
@@ -39,26 +40,78 @@ function requestWithHost(base, path, host, { method = 'GET', body, headers = {} 
   });
 }
 
-test('default export is an HTTP server that handles requests without calling listen', async () => {
-  assert.ok(appServer instanceof Server);
-  assert.equal(appServer.listening, false);
+async function invokeHandler(handler, req) {
+  const headers = {};
+  let text;
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false, writableEnded: false, statusCode: 200,
+    setHeader(name, value) { headers[name.toLowerCase()] = value; },
+    writeHead(status, values) { this.statusCode = status; for (const [name, value] of Object.entries(values)) this.setHeader(name, value); },
+    end(body) { this.writableEnded = true; text = body; },
+  });
+  const pending = handler(req, response);
+  assert.equal(typeof pending?.then, 'function', 'The handler returns its completion Promise.');
+  await pending;
+  assert.equal(response.writableEnded, true);
+  return { status: response.statusCode, headers, body: text === undefined ? null : JSON.parse(text) };
+}
+
+test('default export is an async Node handler that completes requests without calling listen', async () => {
+  assert.equal(typeof requestHandler, 'function');
   for (const path of ['/api/health', '/api/config']) {
-    const result = await new Promise(resolveResponse => {
-      const headers = {};
-      const response = {
-        destroyed: false, writableEnded: false, statusCode: 200,
-        setHeader(name, value) { headers[name.toLowerCase()] = value; },
-        writeHead(status, values) { this.statusCode = status; for (const [name, value] of Object.entries(values)) this.setHeader(name, value); },
-        end(body) { this.writableEnded = true; resolveResponse({ status: this.statusCode, headers, body: JSON.parse(body) }); },
-      };
-      appServer.emit('request', { method: 'GET', url: path, headers: { host: 'localhost' } }, response);
-    });
+    const result = await invokeHandler(requestHandler, { method: 'GET', url: path, headers: { host: 'localhost' } });
     assert.equal(result.status, 200);
     assert.equal(result.headers['content-type'], 'application/json; charset=utf-8');
     if (path === '/api/health') assert.deepEqual(result.body, { status: 'ok' });
     else assert.equal(result.body.models.length, 7);
   }
-  assert.equal(appServer.listening, false);
+});
+
+test('Vercel handler accepts parsed or raw JSON without listening or calling providers', async () => {
+  let calls = 0;
+  const server = createServer({ env: { VERCEL: '1', HF_TOKEN: 'private-key' }, fetchImpl: async () => { calls += 1; throw new Error('No provider calls.'); } });
+  const handler = server.listeners('request')[0];
+  for (const parsed of [true, false]) {
+    const req = parsed ? { body: valid, readableEnded: true } : Readable.from([Buffer.from(JSON.stringify(valid))]);
+    Object.assign(req, { method: 'POST', url: '/api/compare', headers: { host: 'localhost', 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' } });
+    const response = await invokeHandler(handler, req);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.mode, 'demo');
+    assert.equal(response.body.prompt, valid.prompt);
+    assert.ok(response.body.results.every(answer => answer.simulated && answer.status === 'success'));
+    assert.doesNotMatch(JSON.stringify(response.body), /private-key/);
+  }
+  assert.equal(calls, 0);
+  assert.equal(server.listening, false);
+});
+
+test('parsed Vercel JSON retains type, size, and comparison validation', async () => {
+  const handler = createServer({ env: { VERCEL: '1' } }).listeners('request')[0];
+  for (const [body, headers, expected] of [
+    [valid, { 'content-type': 'text/plain' }, 415],
+    [valid, { 'content-length': '32769' }, 413],
+    [{ ...valid, extra: 'x'.repeat(32769) }, {}, 413],
+    [null, {}, 400],
+    [[], {}, 400],
+    [JSON.stringify(valid), {}, 400],
+    [{ ...valid, maxTokens: 9999 }, {}, 400],
+  ]) {
+    const req = { method: 'POST', url: '/api/compare', headers: { host: 'localhost', 'content-type': 'application/json', ...headers }, body, readableEnded: true };
+    assert.equal((await invokeHandler(handler, req)).status, expected);
+  }
+  const req = { method: 'POST', url: '/api/compare', headers: { host: 'localhost', 'content-type': 'application/json' },
+    get body() { throw new Error('private parser details'); } };
+  const response = await invokeHandler(handler, req);
+  assert.equal(response.status, 400);
+  assert.doesNotMatch(JSON.stringify(response.body), /private parser details/);
+});
+
+test('local handlers ignore parsed-body properties and validate the actual request stream', async () => {
+  const handler = createServer({ env: {} }).listeners('request')[0];
+  const req = Object.assign(Readable.from([Buffer.from('{')]), {
+    method: 'POST', url: '/api/compare', headers: { host: 'localhost', 'content-type': 'application/json' }, body: valid,
+  });
+  assert.equal((await invokeHandler(handler, req)).status, 400);
 });
 
 test('config exposes model metadata and mode, never the provider token', async t => {
@@ -143,20 +196,18 @@ test('public demo suppresses all provider credentials and inference even when ke
   assert.equal(calls, 0);
 });
 
-test('Vercel startup calls listen on module import and binds all interfaces', () => {
+test('Vercel imports a callable handler without opening a listening socket', () => {
   const moduleUrl = new URL('../server.mjs', import.meta.url).href;
   const source = `
     import http from 'node:http';
-    let captured;
-    let capturedServer;
     let calls = 0;
-    http.Server.prototype.listen = function (port, host) { captured = { port, host }; capturedServer = this; calls++; return this; };
+    http.Server.prototype.listen = function () { calls++; return this; };
     const entry = await import(${JSON.stringify(moduleUrl)});
-    console.log(JSON.stringify({ ...captured, sameExport: entry.default === capturedServer, calls }));
+    console.log(JSON.stringify({ exportType: typeof entry.default, calls }));
   `;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', windowsHide: true,
     env: { ...process.env, VERCEL: '1', PORT: '3456', HOST: '127.0.0.1', APP_ORIGIN: '', VERCEL_PROJECT_PRODUCTION_URL: '', VERCEL_URL: '', VERCEL_BRANCH_URL: '' } });
-  assert.deepEqual(JSON.parse(output), { port: 3456, host: '0.0.0.0', sameExport: true, calls: 1 });
+  assert.deepEqual(JSON.parse(output), { exportType: 'function', calls: 0 });
 });
 
 test('Vercel trusted deployment domains support their own origins without trusting arbitrary hosts', async t => {
