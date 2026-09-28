@@ -1,0 +1,17 @@
+{
+  "name": "ai-model-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A personal AI model comparison workspace with a no-key demo and server-side inference.",
+  "author": "Molham Alam",
+  "repository": { "type": "git", "url": "https://github.com/Molham-arch/ai-model-lab.git" },
+  "homepage": "https://www.molham.tech/",
+  "type": "module",
+  "engines": { "node": ">=22.9.0" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "dev": "node --watch --env-file-if-exists=.env server.mjs",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

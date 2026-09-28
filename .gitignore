@@ -1,0 +1,17 @@
+# Server-side secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies, local runtimes, and generated output
+node_modules/
+.tools/
+coverage/
+.vercel/
+*.log
+
+# Local editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

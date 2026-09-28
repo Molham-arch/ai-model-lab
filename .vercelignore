@@ -1,0 +1,14 @@
+.env
+.env.*
+.tools/
+.git/
+.github/
+.agents/
+.codex/
+.vercel/
+node_modules/
+tests/
+coverage/
+*.log
+*.zip
+start.cmd

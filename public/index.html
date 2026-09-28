@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#255b42" />
+    <meta name="description" content="An open-source AI model comparison lab by Molham. Explore scripted demo comparisons, or run real models in your own local workspace." />
+    <title>Model Lab — A little curiosity goes a long way.</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to workspace</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <a class="brand" href="#compare" aria-label="Model Lab home">
+          <div class="brand-mark"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 23V9l9 10 9-10v14M7 9l9 4 9-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div><div class="brand-name">model lab<span class="brand-period">.</span></div><div class="brand-subtitle">A SPACE TO EXPERIMENT</div></div>
+        </a>
+        <div class="nav-label">WORKSPACE</div>
+        <nav id="navigation"></nav>
+        <div class="sidebar-bottom">
+          <div class="connection-card" id="connection-card"><span class="status-dot"></span> Preparing workspace…</div>
+          <div class="user-card"><div class="avatar">Y</div><div><strong>Your workspace</strong><small>Made for curious minds</small></div><span class="user-menu" aria-hidden="true">⌘</span></div>
+        </div>
+      </aside>
+      <div class="main-content">
+        <header class="topbar"><div class="topbar-left"><button class="icon-button mobile-toggle" id="mobile-toggle" aria-label="Toggle navigation" aria-expanded="false"></button><div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-current">Compare</strong></div></div><div class="topbar-actions"><span class="local-indicator"><span class="status-dot"></span> Your personal lab</span><button class="button ghost small" id="help-button"></button></div></header>
+        <main id="main" class="page" tabindex="-1"><div class="notice" role="status">Preparing your playground…</div></main>
+        <footer class="page-footer"><span>Built for better questions.</span><nav class="footer-links" aria-label="Project links"><a href="https://github.com/Molham-arch/ai-model-lab" target="_blank" rel="noopener noreferrer">View source</a><span class="footer-separator" aria-hidden="true">/</span><a href="https://www.molham.tech/" target="_blank" rel="noopener noreferrer">By Molham</a></nav><span><span class="footer-dot"></span> <span id="footer-mode">Local workspace</span><span class="footer-separator">/</span> Model Lab v1.0</span></footer>
+      </div>
+    </div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <div id="modal-root"></div>
+    <noscript>This workspace needs JavaScript enabled in your browser.</noscript>
+  </body>
+</html>
